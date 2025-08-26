@@ -10,3 +10,5 @@ env/
 *.h5
 *.db
 
+# Jupyter notebooks
+.ipynb_checkpoints

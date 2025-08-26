@@ -1,0 +1,12 @@
+# Environment variables
+env/
+.env
+
+# Data files
+*.csv
+*.tsv
+*.zip
+*.tar.gz
+*.h5
+*.db
+

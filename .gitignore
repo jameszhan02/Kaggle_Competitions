@@ -10,6 +10,8 @@ env/
 *.h5
 *.db
 
+data/
+
 # Jupyter notebooks
 .ipynb_checkpoints
 

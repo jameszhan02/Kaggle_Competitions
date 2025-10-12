@@ -7,11 +7,12 @@ import torchvision.transforms as transforms
 import numpy as np
 from PIL import Image
 import io
+import os
 
 app = Flask(__name__)
 CORS(app)  
 
-# 定义和训练时完全相同的 transform
+# Define the same transform as during training
 transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.5,), (0.5,))
@@ -35,45 +36,57 @@ class SimpleCNN(nn.Module):
         x = self.fc2(x)
         return x
 
+# Get model path (compatible with local and deployment environments)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(current_dir, 'models', 'digit_model.pth')
+
+# Fallback paths
+if not os.path.exists(model_path):
+    model_path = os.path.join(current_dir, 'digit_model.pth')
+if not os.path.exists(model_path):
+    model_path = os.path.join(os.path.dirname(current_dir), 'models', 'digit_model.pth')
+
 model = SimpleCNN()
-model.load_state_dict(torch.load('../models/digit_model.pth', map_location=torch.device('cpu')))
+model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
 model.eval()
+print(f"✅ Model loaded successfully: {model_path}")
 
 def preprocess_image_from_pil(pil_image):
-    """从 PIL Image 预处理图片 - 和训练时完全一致"""
+    """Preprocess image from PIL Image - consistent with training"""
     img = pil_image.convert('L')
     img = img.resize((28, 28))
-    img_array = np.array(img).astype(np.float32)  # 保持 float32，范围 [0, 255]
+    img_array = np.array(img).astype(np.float32)  # Keep float32, range [0, 255]
     
-    # 智能反转：MNIST 是黑底白字，如果检测到白底黑字则反转
+    # Smart inversion: MNIST is white digit on black background
+    # If white background detected, invert it
     if np.mean(img_array) > 127:
         img_array = 255 - img_array
     
-    # 应用和训练时相同的 transform
-    # ToTensor (对 float32 不除以 255) + Normalize((0.5,), (0.5,))
-    # 结果：(x - 0.5) / 0.5，范围 [-1, 509]
+    # Apply the same transform as training
+    # ToTensor (doesn't divide by 255 for float32) + Normalize((0.5,), (0.5,))
+    # Result: (x - 0.5) / 0.5, range [-1, 509]
     img_tensor = transform(img_array)
     return img_tensor.unsqueeze(0)
 
 @app.route('/predict-image', methods=['POST'])
 def predict_image():
-    """接收图片文件上传"""
+    """Accept image file upload"""
     try:
-        # 检查是否有文件
+        # Check if file exists
         if 'image' not in request.files:
-            return jsonify({'error': '没有上传图片文件，请使用 key="image"'}), 400
+            return jsonify({'error': 'No image file uploaded, please use key="image"'}), 400
         
         file = request.files['image']
         
-        # 检查文件名
+        # Check filename
         if file.filename == '':
-            return jsonify({'error': '文件名为空'}), 400
+            return jsonify({'error': 'Empty filename'}), 400
         
-        # 读取并预处理图片
+        # Read and preprocess image
         img = Image.open(file.stream)
         image_tensor = preprocess_image_from_pil(img)
         
-        # 预测
+        # Predict
         with torch.no_grad():
             output = model(image_tensor)
             probabilities = torch.nn.functional.softmax(output, dim=1)
@@ -91,27 +104,27 @@ def predict_image():
 
 @app.route('/predict-base64', methods=['POST'])
 def predict_base64():
-    """接收 base64 编码的图片"""
+    """Accept base64 encoded image"""
     try:
         data = request.json
         
         if 'image' not in data:
-            return jsonify({'error': '缺少 image 字段'}), 400
+            return jsonify({'error': 'Missing image field'}), 400
         
-        # 解码 base64
+        # Decode base64
         import base64
         img_data = data['image']
-        # 移除 data:image/png;base64, 前缀（如果有）
+        # Remove data:image/png;base64, prefix if exists
         if ',' in img_data:
             img_data = img_data.split(',')[1]
         
         img_bytes = base64.b64decode(img_data)
         img = Image.open(io.BytesIO(img_bytes))
         
-        # 预处理图片
+        # Preprocess image
         image_tensor = preprocess_image_from_pil(img)
         
-        # 预测
+        # Predict
         with torch.no_grad():
             output = model(image_tensor)
             probabilities = torch.nn.functional.softmax(output, dim=1)
